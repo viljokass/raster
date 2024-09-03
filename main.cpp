@@ -15,7 +15,7 @@ const int width = 400;
 const int height = 300;
 const int halfw = 200;
 const int halfh = 150;
-const int scale = 70;
+const int scale = 40;
 
 GdkPixbuf *pixbuf = gdk_pixbuf_new (GDK_COLORSPACE_RGB, FALSE, 8, width, height);
 int rowstride = gdk_pixbuf_get_rowstride (pixbuf);
@@ -32,7 +32,7 @@ std::vector<glm::vec3> work_normals;
 std::vector<glm::ivec3> faces;
 std::vector<glm::ivec3> colours;
 
-float z_buff[width*height];
+float z_buffer[width*height];
 
 glm::mat4 persview;
 glm::vec3 viewpos;
@@ -48,18 +48,31 @@ enum Colour {
 };
 
 // Parameters for rendering
-bool bfc = false;
-bool fill = false;
+bool bfc = true;
+bool fill = true;
+bool enable_z_buffer = true;
 bool random_colour = false;
 Colour col = ORANGE;
 
 // A pixel drawing function.
 inline void draw_pixel (int x, int y, char red, char green, char blue) {
-  if (y < 0 || y > height - 1) return;
-  if (x < 0 || x > width - 1) return;
+  if (y < 1 || y > height - 1) return;
+  if (x < 1 || x > width - 1) return;
   *(pixels + (height - y) * rowstride + x * 3) = red;
   *(pixels + (height - y) * rowstride + x * 3 + 1) = green;
   *(pixels + (height - y) * rowstride + x * 3 + 2) = blue;
+}
+
+inline void put_in_z_buffer(int x, int y, float value) {
+  if (y < 0 || y > height - 1) return;
+  if (x < 0 || x > width - 1) return;
+  z_buffer[(height - y) * width + x] = value;
+}
+
+inline float get_from_z_buffer(int x, int y) {
+  if (y < 0 || y > height - 1) return MAX_FLOAT;
+  if (x < 0 || x > width - 1) return MAX_FLOAT;
+  return z_buffer[(height - y) * width + x];
 }
 
 // A line drawing function
@@ -121,14 +134,12 @@ inline void triangle_w(int p1x, int p1y, int p2x, int p2y, int p3x, int p3y, cha
 
 // Draw a triangle
 inline void triangle_f(
-  int p1x, int p1y, int p2x, int p2y, int p3x, int p3y, 
+  int p1x, int p1y, float p1z,
+  int p2x, int p2y, float p2z,
+  int p3x, int p3y, float p3z,
   glm::vec3 normal, unsigned char r, unsigned char g, unsigned char b) {
 
-  // Calculate normals here with cross products.
-  // Implement back face culling, diffuse shading and
-  // z-buffer, so that we'll get something meaningful
-
-  float intensity = std::min(0.9f, std::max(0.0f, glm::dot(normal, -viewpos_n)));
+  float intensity = std::min(1.0f, std::max(0.0f, glm::dot(normal, -viewpos_n)));
 
   r = (unsigned char)(intensity * r);
   g = (unsigned char)(intensity * g);
@@ -162,13 +173,37 @@ inline void triangle_f(
   line(bbox_max_x, bbox_max_y, bbox_min_x, bbox_max_y, 255, 255, 0);
   line(bbox_min_x, bbox_max_y, bbox_min_x, bbox_min_y, 255, 255, 0);
 */
-
-  // Check, if the pixels within the bounding box are in
-  // the triangle. Probably has room for optimization.
-  for (int x = bbox_min_x; x < bbox_max_x; ++x) {
-    for (int y = bbox_min_y; y < bbox_max_y; ++y) {
-      if (point_in_tri(p1x, p1y, p2x, p2y, p3x, p3y, x, y)) draw_pixel(x, y, r, g, b);
+  // If z_buffer is enabled
+  if (enable_z_buffer) {
+    // No time for fancy-pants linear interpolation
+    // of z values - I'll just slap the minimum value of z
+    // from the group of 3 in the z-buffer and call it a day.
+    // Works as long as no triangles intersect. Or in another
+    // words, breaks apart immediately if that happens.
+    float z_min = std::min(std::min(p1z, p2z), p3z);
+    // Check, if the pixels within the bounding box are in
+    // the triangle. Probably has room for optimization.
+    for (int x = bbox_min_x; x < bbox_max_x; ++x) {
+      for (int y = bbox_min_y; y < bbox_max_y; ++y) {
+        if (point_in_tri(p1x, p1y, p2x, p2y, p3x, p3y, x, y)) {        
+          if (get_from_z_buffer(x, y) > z_min) {
+            draw_pixel(x, y, r, g, b);
+            put_in_z_buffer(x, y, z_min);
+          } 
+        }
+      }
     }
+  }
+  // If z_buffer is disabled
+  else {
+    for (int x = bbox_min_x; x < bbox_max_x; ++x) {
+      for (int y = bbox_min_y; y < bbox_max_y; ++y) {
+        if (point_in_tri(p1x, p1y, p2x, p2y, p3x, p3y, x, y)) {
+          draw_pixel(x, y, r, g, b);
+        }
+      }
+    }
+
   }
 }
 
@@ -184,7 +219,7 @@ inline void clear_screen() {
 inline void clear_z_buff() {
   float m = std::numeric_limits<float>::max();
   for (unsigned int x = 0; x < pixel_amount; ++x) {
-    z_buff[x] = MAX_FLOAT;
+    z_buffer[x] = MAX_FLOAT;
   }
 }
 
@@ -214,7 +249,7 @@ gboolean render (GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
 //  std::cout << (int)(1.0/delta_b) << std::endl;
 
   clear_screen();
-//  clear_z_buff();
+  clear_z_buff();
 
   glm::mat4 model = glm::mat4(1.0f);
   model = glm::rotate(model, time/1000000.0f, glm::vec3(0, 1, 0));
@@ -245,22 +280,46 @@ gboolean render (GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
 
   // Draw model using faces and transformed vertices
   int flen = faces.size();
+  // Do I need to take the unneccessary-per-cycle checks
+  // out or does the compiler already do that when optimizing?
+  // As in:
+  // for (x = 0, x < 1000) {
+  //   if (a) {
+  //     [no changes to a]
+  //   } else {
+  //     [no changes to a]
+  //   }
+  // }
+  // Optimized for performance, the above should sensibly become
+  // if (a) {
+  //   for (x = 0, x < 1000) {
+  //     [no changes to a]
+  //   }
+  // } else {
+  //   for (x = 0, x < 1000) {
+  //     [no changes to a]
+  //   }
+  // }
   for (int i = 0; i < flen; ++i) {
     face = faces[i];
     v1 = work_vertices[face.x-1];
     v2 = work_vertices[face.y-1];
     v3 = work_vertices[face.z-1];
-    float dot = glm::dot(glm::normalize(glm::cross(v3-v1, v2-v1)), viewpos_n);
+    float dot = 
+      glm::dot(
+        glm::normalize(glm::cross(v3-v1, v2-v1)), 
+        viewpos_n
+      );
     // Back face culling
-    if (dot < 0 && bfc) continue;
+    if (bfc && dot < 0) continue;
     if (fill) {
       if (random_colour) {
         colour = colours[i];
       }
       triangle_f(
-        halfw + (int)(v1.x * scale), halfh + (int)(v1.y * scale),
-        halfw + (int)(v2.x * scale), halfh + (int)(v2.y * scale),
-        halfw + (int)(v3.x * scale), halfh + (int)(v3.y * scale),
+        halfw + (int)(v1.x * scale), halfh + (int)(v1.y * scale), v1.z,
+        halfw + (int)(v2.x * scale), halfh + (int)(v2.y * scale), v2.z,
+        halfw + (int)(v3.x * scale), halfh + (int)(v3.y * scale), v3.z,
         work_normals[i], colour.x, colour.y, colour.z
       );
     } else {
@@ -311,6 +370,7 @@ void read(std::string filename) {
   }
   for (unsigned int i = 0; i < fs; ++i) {
     colours.push_back(glm::ivec3(std::rand()%255, std::rand()%255, std::rand()%255));
+
     nc1 = vertices[faces[i].z - 1] - vertices[faces[i].x - 1];
     nc2 = vertices[faces[i].y - 1] - vertices[faces[i].x - 1];
     normals.push_back(glm::cross(nc2, nc1));
@@ -338,11 +398,12 @@ glm::ivec3 choose_colour(Colour colour) {
 
 void print_help() {
   std::cout << "Possible arguments are:" << std::endl;
-  std::cout << " * '-help'                   > Displays this message. " << std::endl;
-  std::cout << " * '-bfc'                    > Enalbles back face culling. " << std::endl;
-  std::cout << " * '-fill'                   > Draws filled triangles (not wireframe)." << std::endl;
-  std::cout << " * '-f [path/to/file.obj]'  > Loads the specified .obj file." << std::endl;
-  std::cout << " * '-c [colour]'            > specifies the object colour." << std::endl;
+  std::cout << " * '-help'                    > Displays this message. " << std::endl;
+  std::cout << " * '-bfc'                     > Disables back face culling. " << std::endl;
+  std::cout << " * '-wire'                    > Draws wireframe triangles (not filled)." << std::endl;
+  std::cout << " * '-zbuff'                   > Disables the not-so-good z-buffer." << std::endl;
+  std::cout << " * '-f [path/to/file.obj]'    > Loads the specified .obj file." << std::endl;
+  std::cout << " * '-c [colour]'              > specifies the object colour." << std::endl;
   std::cout << " * Colours: 'red', 'green', 'blue', 'orange', 'yellow', 'white', 'random'." << std::endl << std::endl;
 }
 
@@ -353,8 +414,9 @@ int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
     argument = std::string(argv[i]);
     if (argument == "-help") print_help();
-    else if (argument == "-bfc") bfc = true;
-    else if (argument == "-fill") fill = true;
+    else if (argument == "-bfc") bfc = false;
+    else if (argument == "-wire") fill = false;
+    else if (argument == "-zbuff") enable_z_buffer = false;
     else if (argument == "-f") {
       if (file) {
         std::cout << "File already specified and probably read too." << std::endl;
@@ -390,15 +452,14 @@ int main(int argc, const char* argv[]) {
     std::cout << "No file specified. Use '-help' argument for instructions." << std::endl;
     exit(0);
   }
-
   colour = choose_colour(col);
 
   // Some initial transformations
   glm::mat4 view = glm::mat4(1.0f);
-  viewpos = glm::vec3(0.0f, 0.0f, -3.0f);
+  viewpos = glm::vec3(0.0f, 0.0f, -10.0f);
   viewpos_n = glm::normalize(viewpos);
   view = glm::translate(view, viewpos);
-  glm::mat4 perspective = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 10.0f);
+  glm::mat4 perspective = glm::perspective(glm::radians(10.0f), 1.0f, 0.1f, 100.0f);
   persview = perspective * view;
 
   // Prepare the GTK-window and all
