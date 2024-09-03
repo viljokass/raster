@@ -52,7 +52,7 @@ enum Colour {
 bool bfc = false;
 bool fill = false;
 bool random_colour = false;
-Colour col;
+Colour col = ORANGE;
 
 // A pixel drawing function.
 inline void draw_pixel (int x, int y, char red, char green, char blue) {
@@ -197,7 +197,7 @@ static gint64 delta_time = 0;
 glm::vec3 v;
 glm::vec4 wv;
 glm::ivec3 face;
-glm::ivec3 colour = glm::ivec3(255, 127, 0);
+glm::ivec3 colour;
 glm::vec3 v1;
 glm::vec3 v2;
 glm::vec3 v3;
