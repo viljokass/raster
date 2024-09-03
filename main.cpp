@@ -26,6 +26,10 @@ unsigned int pixel_amount = width * height;
 
 std::vector<glm::vec3> vertices;
 std::vector<glm::vec3> work_vertices;
+
+std::vector<glm::vec3> normals;
+std::vector<glm::vec3> work_normals;
+
 std::vector<glm::ivec3> faces;
 std::vector<glm::ivec3> colours;
 
@@ -35,9 +39,20 @@ glm::mat4 persview;
 glm::vec3 viewpos;
 glm::vec3 viewpos_n;
 
+enum Colour {
+  RED,
+  BLUE,
+  ORANGE,
+  YELLOW,
+  GREEN,
+  WHITE
+};
+
 // Parameters for rendering
 bool bfc = false;
 bool fill = false;
+bool random_colour = false;
+Colour col;
 
 // A pixel drawing function.
 inline void draw_pixel (int x, int y, char red, char green, char blue) {
@@ -99,24 +114,26 @@ inline bool point_in_tri(int x1, int y1, int x2, int y2, int x3, int y3, int x, 
   return !(has_neg && has_pos);
 }
 
-inline void triangle_w(int p1x, int p1y, int p2x, int p2y, int p3x, int p3y, float intensity, char r, char g, char b) {
+inline void triangle_w(int p1x, int p1y, int p2x, int p2y, int p3x, int p3y, char r, char g, char b) {
   line(p1x, p1y, p2x, p2y, r, g, b);
   line(p2x, p2y, p3x, p3y, r, g, b);
   line(p3x, p3y, p1x, p1y, r, g, b);
 }
 
 // Draw a triangle
-inline void triangle_f(int p1x, int p1y, int p2x, int p2y, int p3x, int p3y, float intensity, char r, char g, char b) {
+inline void triangle_f(
+  int p1x, int p1y, int p2x, int p2y, int p3x, int p3y, 
+  glm::vec3 normal, unsigned char r, unsigned char g, unsigned char b) {
 
   // Calculate normals here with cross products.
   // Implement back face culling, diffuse shading and
   // z-buffer, so that we'll get something meaningful
 
-/*
-  r = (char)(intensity * r);
-  g = (char)(intensity * g);
-  b = (char)(intensity * b);
-*/
+  float intensity = std::min(0.9f, std::max(0.0f, glm::dot(normal, -viewpos_n)));
+
+  r = (unsigned char)(intensity * r);
+  g = (unsigned char)(intensity * g);
+  b = (unsigned char)(intensity * b);
 
   // Create the bounding box
   int bbox_min_x = width;
@@ -180,11 +197,12 @@ static gint64 delta_time = 0;
 glm::vec3 v;
 glm::vec4 wv;
 glm::ivec3 face;
-glm::ivec3 colour;
+glm::ivec3 colour = glm::ivec3(255, 127, 0);
 glm::vec3 v1;
 glm::vec3 v2;
 glm::vec3 v3;
 glm::vec3 n;
+float wvw;
 
 // Render loop
 gboolean render (GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
@@ -212,12 +230,18 @@ gboolean render (GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
     wv.z = v.z;
     wv.w = 1.0;
     wv = persview * model * wv;
-    wv.x = wv.x/wv.w;
-    wv.y = wv.y/wv.w;
-    wv.z = wv.z/wv.w;
+    wvw = wv.w;
+    wv.x = wv.x/wvw;
+    wv.y = wv.y/wvw;
+    wv.z = wv.z/wvw;
     work_vertices[i].x = wv.x;
     work_vertices[i].y = wv.y;
     work_vertices[i].z = wv.z;
+  }
+
+  int nlen = normals.size();
+  for (int i = 0; i < nlen; ++i) {
+    work_normals[i] = glm::normalize(glm::mat3(model) * normals[i]);
   }
 
   // Draw model using faces and transformed vertices
@@ -231,25 +255,30 @@ gboolean render (GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
     // Back face culling
     if (dot < 0 && bfc) continue;
     if (fill) {
-      colour = colours[i];
+      if (random_colour) {
+        colour = colours[i];
+      }
       triangle_f(
         halfw + (int)(v1.x * scale), halfh + (int)(v1.y * scale),
         halfw + (int)(v2.x * scale), halfh + (int)(v2.y * scale),
         halfw + (int)(v3.x * scale), halfh + (int)(v3.y * scale),
-        dot, colour.x, colour.y, colour.z
+        work_normals[i], colour.x, colour.y, colour.z
       );
     } else {
       triangle_w(
         halfw + (int)(v1.x * scale), halfh + (int)(v1.y * scale),
         halfw + (int)(v2.x * scale), halfh + (int)(v2.y * scale),
         halfw + (int)(v3.x * scale), halfh + (int)(v3.y * scale),
-        dot, 250, 125, 0
+        250, 125, 0
       );
     }
   }
   gtk_image_set_from_pixbuf (image, pixbuf);
   return 1;
 }
+
+glm::vec3 nc1;
+glm::vec3 nc2;
 
 // Function for reading .obj files
 void read(std::string filename) {
@@ -278,20 +307,43 @@ void read(std::string filename) {
       ++fs;
     }
   }
-  for (unsigned int i = 0; i < vertices.size(); ++i) {
+  for (unsigned int i = 0; i < vs; ++i) {
     work_vertices.push_back(glm::vec3(0.0));
   }
   for (unsigned int i = 0; i < fs; ++i) {
     colours.push_back(glm::ivec3(std::rand(), std::rand(), std::rand()));
+    nc1 = vertices[faces[i].z - 1] - vertices[faces[i].x - 1];
+    nc2 = vertices[faces[i].y - 1] - vertices[faces[i].x - 1];
+    normals.push_back(glm::cross(nc2, nc1));
+    work_normals.push_back(glm::vec3(0.0));
+  }
+}
+
+glm::ivec3 choose_colour(Colour colour) {
+  switch (colour) {
+    case RED:
+      return glm::ivec3(250, 0, 0);
+    case BLUE:
+      return glm::ivec3(0, 0, 250);
+    case ORANGE:
+      return glm::ivec3(250, 125, 0);
+    case YELLOW:
+      return glm::ivec3(250, 250, 0);
+    case GREEN:
+      return glm::ivec3(0, 250, 0);
+    case WHITE:
+      return glm::ivec3(250);
   }
 }
 
 void print_help() {
   std::cout << "Possible arguments are:" << std::endl;
-  std::cout << " * 'help'                   > Displays this message. " << std::endl;
-  std::cout << " * 'bfc'                    > Enalbles back face culling. " << std::endl;
-  std::cout << " * 'fill'                   > Draws filled triangles (not wireframe)." << std::endl;
+  std::cout << " * '-help'                   > Displays this message. " << std::endl;
+  std::cout << " * '-bfc'                    > Enalbles back face culling. " << std::endl;
+  std::cout << " * '-fill'                   > Draws filled triangles (not wireframe)." << std::endl;
   std::cout << " * '-f [path/to/file.obj]'  > Loads the specified .obj file." << std::endl;
+  std::cout << " * '-c [colour]'            > specifies the object colour." << std::endl;
+  std::cout << " * Colours: 'red', 'green', 'blue', 'orange', 'yellow', 'white', 'random'." << std::endl << std::endl;
 }
 
 int main(int argc, const char* argv[]) {
@@ -300,15 +352,12 @@ int main(int argc, const char* argv[]) {
   std::string argument; 
   for (int i = 1; i < argc; ++i) {
     argument = std::string(argv[i]);
-    if (argument == "help") {
-      print_help();
-      exit(0);
-    }
-    else if (argument == "bfc") bfc = true;
-    else if (argument == "fill") fill = true;
+    if (argument == "-help") print_help();
+    else if (argument == "-bfc") bfc = true;
+    else if (argument == "-fill") fill = true;
     else if (argument == "-f") {
       if (file) {
-        std::cout << "File already specified." << std::endl;
+        std::cout << "File already specified and probably read too." << std::endl;
         ++i;
         continue;
       }
@@ -316,22 +365,40 @@ int main(int argc, const char* argv[]) {
       file = true;
       ++i;
     }
-    else {
-      std::cout << "Unknown argument: " << argument << ". (did you remember to use the -f flag?)" << std::endl;
-      exit(0);
+    else if (argument == "-c") {
+      std::string col_arg = std::string(argv[i + 1]);
+      ++i;
+      if (col_arg == "red")         col = RED;
+      else if (col_arg == "blue")   col = BLUE;
+      else if (col_arg == "orange") col = ORANGE;
+      else if (col_arg == "yellow") col = YELLOW;
+      else if (col_arg == "green")  col = GREEN;
+      else if (col_arg == "white")  col = WHITE;
+      else if (col_arg == "random") random_colour = true;
+      else {
+        std::cout << "Unknown colour. Defaulting to orange." << std::endl;
+        col = ORANGE;
+      }
     }
+    else {
+      std::cout << "Unknown argument: " << argument << "." << std::endl;
+      exit(0);
+    } 
   }
+
   if (!file) {
-    std::cout << "No file specified. Use 'help' argument for instructions." << std::endl;
+    std::cout << "No file specified. Use '-help' argument for instructions." << std::endl;
     exit(0);
   }
+
+  colour = choose_colour(col);
 
   // Some initial transformations
   glm::mat4 view = glm::mat4(1.0f);
   viewpos = glm::vec3(0.0f, 0.0f, -3.0f);
   viewpos_n = glm::normalize(viewpos);
   view = glm::translate(view, viewpos);
-  glm::mat4 perspective = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 100.0f);
+  glm::mat4 perspective = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 10.0f);
   persview = perspective * view;
 
   // Prepare the GTK-window and all
