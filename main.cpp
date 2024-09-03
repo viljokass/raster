@@ -10,7 +10,6 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #define MAX_FLOAT std::numeric_limits<float>::max();
-#define RAND_MAX 255;
 
 const int width = 400;
 const int height = 300;
@@ -311,7 +310,7 @@ void read(std::string filename) {
     work_vertices.push_back(glm::vec3(0.0));
   }
   for (unsigned int i = 0; i < fs; ++i) {
-    colours.push_back(glm::ivec3(std::rand(), std::rand(), std::rand()));
+    colours.push_back(glm::ivec3(std::rand()%255, std::rand()%255, std::rand()%255));
     nc1 = vertices[faces[i].z - 1] - vertices[faces[i].x - 1];
     nc2 = vertices[faces[i].y - 1] - vertices[faces[i].x - 1];
     normals.push_back(glm::cross(nc2, nc1));
@@ -334,6 +333,7 @@ glm::ivec3 choose_colour(Colour colour) {
     case WHITE:
       return glm::ivec3(250);
   }
+  return glm::ivec3(250, 125, 0);
 }
 
 void print_help() {
