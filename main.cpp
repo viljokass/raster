@@ -210,9 +210,9 @@ inline void triangle_f(
 // Clear the screen (black)
 inline void clear_screen() {
   for (unsigned int x = 0; x < pixel_amount; ++x) {
-    *(pixels + x*3) = 0;
-    *(pixels + x*3+1) = 0;
-    *(pixels + x*3+2) = 0;
+    *(pixels + x*3) 	= 20;
+    *(pixels + x*3+1) 	= 20;
+    *(pixels + x*3+2) 	= 20;
   }
 }
 
