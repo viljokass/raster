@@ -55,7 +55,7 @@ bool random_colour = false;
 Colour col = ORANGE;
 
 // A pixel drawing function.
-inline void draw_pixel (int x, int y, char red, char green, char blue) {
+inline void draw_pixel (int x, int y, unsigned char red, unsigned char green, unsigned char blue) {
   if (y < 1 || y > height - 1) return;
   if (x < 1 || x > width - 1) return;
   *(pixels + (height - y) * rowstride + x * 3) = red;
@@ -106,6 +106,13 @@ void line(int x0, int y0, int x1, int y1, char r, char g, char b) {
   }
 }
 
+inline void triangle_w(int p1x, int p1y, int p2x, int p2y, int p3x, int p3y, char r, char g, char b) {
+  line(p1x, p1y, p2x, p2y, r, g, b);
+  line(p2x, p2y, p3x, p3y, r, g, b);
+  line(p3x, p3y, p1x, p1y, r, g, b);
+}
+
+/*
 // I actually don't know what this does lol.
 inline int sign(int x1, int y1, int x2, int y2, int x3, int y3) {
   return (x1 - x3) * (y2 - y3) - (x2 - x3) * (y1 - y3);
@@ -126,13 +133,8 @@ inline bool point_in_tri(int x1, int y1, int x2, int y2, int x3, int y3, int x, 
   return !(has_neg && has_pos);
 }
 
-inline void triangle_w(int p1x, int p1y, int p2x, int p2y, int p3x, int p3y, char r, char g, char b) {
-  line(p1x, p1y, p2x, p2y, r, g, b);
-  line(p2x, p2y, p3x, p3y, r, g, b);
-  line(p3x, p3y, p1x, p1y, r, g, b);
-}
-
 // Draw a triangle
+// (z-buffer might be easier to implement on scanline.
 inline void triangle_f(
   int p1x, int p1y, float p1z,
   int p2x, int p2y, float p2z,
@@ -166,13 +168,13 @@ inline void triangle_f(
   if (p3y < bbox_min_y) bbox_min_y = p3y;
   if (p3y > bbox_max_y) bbox_max_y = p3y;
 
-/*
+
   // Draw bounding boxes, just for fun
   line(bbox_min_x, bbox_min_y, bbox_max_x, bbox_min_y, 255, 255, 0);
   line(bbox_max_x, bbox_min_y, bbox_max_x, bbox_max_y, 255, 255, 0);
   line(bbox_max_x, bbox_max_y, bbox_min_x, bbox_max_y, 255, 255, 0);
   line(bbox_min_x, bbox_max_y, bbox_min_x, bbox_min_y, 255, 255, 0);
-*/
+
   // If z_buffer is enabled
   if (enable_z_buffer) {
     // No time for fancy-pants linear interpolation
@@ -203,7 +205,122 @@ inline void triangle_f(
         }
       }
     }
+  }
+}
+*/
 
+// Another way to draw tris. A 'line scanner',
+// Also is capable of proper z_buffering
+void triangle_f(
+  int p1x, int p1y, float p1z,
+  int p2x, int p2y, float p2z,
+  int p3x, int p3y, float p3z,
+  glm::vec3 normal,
+  unsigned char r,
+  unsigned char g,
+  unsigned char b) {
+
+  if (p1y == p2y && p1y == p3y) return;
+
+  float intensity = std::min(1.0f, std::max(0.0f, glm::dot(normal, -viewpos_n)));
+
+  r = (unsigned char)(intensity * r);
+  g = (unsigned char)(intensity * g);
+  b = (unsigned char)(intensity * b);
+
+  if (p1y > p2y) {
+    std::swap(p1x, p2x);
+    std::swap(p1y, p2y);
+    std::swap(p1z, p2z);
+  }
+  if (p1y > p3y) {
+    std::swap(p1x, p3x);
+    std::swap(p1y, p3y);
+    std::swap(p1z, p3z);
+  }
+  if (p2y > p3y) {
+    std::swap(p2x, p3x);
+    std::swap(p2y, p3y);
+    std::swap(p2z, p3z);
+  }
+
+  int total_h = p3y - p1y;
+  int segment_h;
+  float alpha;
+  float beta;
+  int xa;
+  int xb;
+  if (enable_z_buffer) {
+    float za;
+    float zb;
+    float z_com;
+    segment_h = p2y - p1y + 1;
+    for (int y = p1y; y <= p2y; ++y) {
+      alpha = (float)(y - p1y)/total_h;
+      beta  = (float)(y - p1y)/segment_h;
+      xa = p1x + (p3x - p1x) * alpha;
+      xb = p1x + (p2x - p1x) * beta;
+      za = p1z + (p3z - p1z) * alpha;
+      zb = p1z + (p2z - p1z) * beta;
+      if (xa > xb) {
+        std::swap(xa, xb);
+        std::swap(za, zb);
+      }
+      for(int x = xa; x <= xb; ++x) {
+        z_com = za + (x - xa) * ((zb - za)/(float)(xb - xa));
+        if (get_from_z_buffer(x, y) > z_com) {
+          put_in_z_buffer(x, y, z_com);
+          draw_pixel(x, y, r, g, b);
+        }
+      }
+    }
+    segment_h = p3y - p2y + 1;
+    for (int y = p2y; y <= p3y; ++y) {
+      alpha = (float)(y - p1y)/total_h;
+      beta  = (float)(y - p2y)/segment_h;
+      xa = p1x + (p3x - p1x) * alpha;
+      xb = p2x + (p3x - p2x) * beta;
+      za = p1z + (p3z - p1z) * alpha;
+      zb = p2z + (p3z - p2z) * beta;
+      if (xa > xb) {
+        std::swap(xa, xb);
+        std::swap(za, zb);
+      }
+      for (int x = xa; x <= xb; ++x) {
+        z_com = za + (x - xa) * ((zb - za)/(float)(xb - xa));
+        if (get_from_z_buffer(x, y) > z_com) {
+          put_in_z_buffer(x, y, z_com);
+          draw_pixel(x, y, r, g, b);
+        }
+      }
+    }
+  } else {
+    segment_h = p2y - p1y + 1;
+    for (int y = p1y; y <= p2y; ++y) {
+      alpha = (float)(y - p1y)/total_h;
+      beta  = (float)(y - p1y)/segment_h;
+      xa = p1x + (p3x - p1x) * alpha;
+      xb = p1x + (p2x - p1x) * beta;
+      if (xa > xb) {
+        std::swap(xa, xb);
+      }
+      for(int x = xa; x <= xb; ++x) {
+        draw_pixel(x, y, r, g, b);
+      } 
+    }
+    segment_h = p3y - p2y + 1;
+    for (int y = p2y; y <= p3y; ++y) {
+      alpha = (float)(y - p1y)/total_h;
+      beta  = (float)(y - p2y)/segment_h;
+      xa = p1x + (p3x - p1x) * alpha;
+      xb = p2x + (p3x - p2x) * beta;
+      if (xa > xb) {
+        std::swap(xa, xb);
+      }
+      for (int x = xa; x <= xb; ++x) {
+        draw_pixel(x, y, r, g, b);
+      }
+    } 
   }
 }
 
