@@ -9,13 +9,12 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#define MAX_FLOAT std::numeric_limits<float>::max();
-
 const int width = 400;
 const int height = 300;
 const int halfw = 200;
 const int halfh = 150;
 const int scale = 40;
+const float max_float = std::numeric_limits<float>::max();
 
 GdkPixbuf *pixbuf = gdk_pixbuf_new (GDK_COLORSPACE_RGB, FALSE, 8, width, height);
 int rowstride = gdk_pixbuf_get_rowstride (pixbuf);
@@ -70,8 +69,8 @@ inline void put_in_z_buffer(int x, int y, float value) {
 }
 
 inline float get_from_z_buffer(int x, int y) {
-  if (y < 0 || y > height - 1) return MAX_FLOAT;
-  if (x < 0 || x > width - 1) return MAX_FLOAT;
+  if (y < 0 || y > height - 1) return max_float;
+  if (x < 0 || x > width - 1) return max_float;
   return z_buffer[(height - y) * width + x];
 }
 
@@ -215,19 +214,21 @@ void triangle_f(
   int p1x, int p1y, float p1z,
   int p2x, int p2y, float p2z,
   int p3x, int p3y, float p3z,
-  glm::vec3 normal,
+  glm::vec3 *normal,
   unsigned char r,
   unsigned char g,
   unsigned char b) {
 
+  // If all triangles are on the same y, stop.
   if (p1y == p2y && p1y == p3y) return;
 
-  float intensity = std::min(1.0f, std::max(0.0f, glm::dot(normal, -viewpos_n)));
-
+  // Lighting calcs
+  float intensity = std::min(1.0f, std::max(0.0f, glm::dot(*normal, -viewpos_n)));
   r = (unsigned char)(intensity * r);
   g = (unsigned char)(intensity * g);
   b = (unsigned char)(intensity * b);
 
+  // Sort the vertices so that p1 is at the bottom and p3 at the top
   if (p1y > p2y) {
     std::swap(p1x, p2x);
     std::swap(p1y, p2y);
@@ -244,36 +245,49 @@ void triangle_f(
     std::swap(p2z, p3z);
   }
 
+  // Raterize the triangle
+  //
+  // We split the triangle into two parts by p2y.
+  // We interpolate x and z using y to
+  // determine boundaries for scanline iteration.
+  // Then using x we interpolate z to determine depth.
   int total_h = p3y - p1y;
   int segment_h;
   float alpha;
   float beta;
   int xa;
   int xb;
+  float z_lerp_const;
+  // If z-buffer is enabled
   if (enable_z_buffer) {
     float za;
     float zb;
     float z_com;
     segment_h = p2y - p1y + 1;
+    // 1st half
     for (int y = p1y; y <= p2y; ++y) {
       alpha = (float)(y - p1y)/total_h;
       beta  = (float)(y - p1y)/segment_h;
-      xa = p1x + (p3x - p1x) * alpha;
-      xb = p1x + (p2x - p1x) * beta;
-      za = p1z + (p3z - p1z) * alpha;
+      xa = p1x + (p3x - p1x) * alpha;     // Interpolate starting x
+      xb = p1x + (p2x - p1x) * beta;      // Interpolate ending x
+      za = p1z + (p3z - p1z) * alpha;     // same for z
       zb = p1z + (p2z - p1z) * beta;
       if (xa > xb) {
         std::swap(xa, xb);
         std::swap(za, zb);
       }
+      lerp_const = ((zb - za)/(float)(xb - xa));
       for(int x = xa; x <= xb; ++x) {
-        z_com = za + (x - xa) * ((zb - za)/(float)(xb - xa));
+        // Interpolate z
+        z_com = za + (x - xa) * z_lerp_const;
+        // Standard z-buffer affair
         if (get_from_z_buffer(x, y) > z_com) {
           put_in_z_buffer(x, y, z_com);
           draw_pixel(x, y, r, g, b);
         }
       }
     }
+    // 2nd half
     segment_h = p3y - p2y + 1;
     for (int y = p2y; y <= p3y; ++y) {
       alpha = (float)(y - p1y)/total_h;
@@ -286,15 +300,18 @@ void triangle_f(
         std::swap(xa, xb);
         std::swap(za, zb);
       }
+      lerp_const = ((zb - za)/(float)(xb - xa));
       for (int x = xa; x <= xb; ++x) {
-        z_com = za + (x - xa) * ((zb - za)/(float)(xb - xa));
+        z_com = za + (x - xa) * z_lerp_const;
         if (get_from_z_buffer(x, y) > z_com) {
           put_in_z_buffer(x, y, z_com);
           draw_pixel(x, y, r, g, b);
         }
       }
     }
-  } else {
+  } 
+  // If z-buffer is not enabled
+  else {
     segment_h = p2y - p1y + 1;
     for (int y = p1y; y <= p2y; ++y) {
       alpha = (float)(y - p1y)/total_h;
@@ -324,22 +341,23 @@ void triangle_f(
   }
 }
 
-// Clear the screen (black)
+// Clear the screen (rewrite all to certain col)
 inline void clear_screen() {
   for (unsigned int x = 0; x < pixel_amount; ++x) {
-    *(pixels + x*3) 	= 20;
+    *(pixels + x*3) 	  = 20;
     *(pixels + x*3+1) 	= 20;
     *(pixels + x*3+2) 	= 20;
   }
 }
 
+// Set all elements of z-buffer to max_float
 inline void clear_z_buff() {
-  float m = std::numeric_limits<float>::max();
   for (unsigned int x = 0; x < pixel_amount; ++x) {
-    z_buffer[x] = MAX_FLOAT;
+    z_buffer[x] = max_float;
   }
 }
 
+// Time variables
 static gint64 old_time = 0;
 static gint64 delta_time = 0;
 
@@ -365,38 +383,45 @@ gboolean render (GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
   float delta_b = delta_time/1000000.0;
 //  std::cout << (int)(1.0/delta_b) << std::endl;
 
+  // Clear the screen and z-buffer
   clear_screen();
   clear_z_buff();
 
+  // Calculate rotation matrix for the model
   glm::mat4 model = glm::mat4(1.0f);
   model = glm::rotate(model, time/1000000.0f, glm::vec3(0, 1, 0));
 
   // Transform the vertices here using model and
   // perspective matrices and untransformed vertices
+  // Process:
+  // 1. put x, y, z values from vertex to work vertex
+  // 2. transform work vertex with the matrices
+  // 3. perform perspective division
+  // 4. put the result to the work vertex array for later
   int vlen = vertices.size();
   for(int i = 0; i < vlen; ++i) {
     v = vertices[i];
-    wv.x = v.x;
+    wv.x = v.x;                   // 1.
     wv.y = v.y;
     wv.z = v.z;
     wv.w = 1.0;
-    wv = persview * model * wv;
+    wv = persview * model * wv;   // 2.
     wvw = wv.w;
-    wv.x = wv.x/wvw;
+    wv.x = wv.x/wvw;              // 3.
     wv.y = wv.y/wvw;
     wv.z = wv.z/wvw;
-    work_vertices[i].x = wv.x;
+    work_vertices[i].x = wv.x;    // 4.
     work_vertices[i].y = wv.y;
     work_vertices[i].z = wv.z;
   }
-
+  
+  // Transform the normals with model matrix
   int nlen = normals.size();
   for (int i = 0; i < nlen; ++i) {
     work_normals[i] = glm::normalize(glm::mat3(model) * normals[i]);
   }
 
   // Draw model using faces and transformed vertices
-  int flen = faces.size();
   // Do I need to take the unneccessary-per-cycle checks
   // out or does the compiler already do that when optimizing?
   // As in:
@@ -417,37 +442,44 @@ gboolean render (GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
   //     [no changes to a]
   //   }
   // }
+  int flen = faces.size();
   for (int i = 0; i < flen; ++i) {
     face = faces[i];
-    v1 = work_vertices[face.x-1];
-    v2 = work_vertices[face.y-1];
-    v3 = work_vertices[face.z-1];
+    v1 = work_vertices[face.x-1]; // vertex 1
+    v2 = work_vertices[face.y-1]; // vertex 2
+    v3 = work_vertices[face.z-1]; // vertex 3
+
+    // Calculate dot product of the view-space 
+    // vertices and view direction
     float dot = 
       glm::dot(
         glm::normalize(glm::cross(v3-v1, v2-v1)), 
         viewpos_n
       );
-    // Back face culling
+    // Back face culling (if above dot product is negative)
     if (bfc && dot < 0) continue;
     if (fill) {
       if (random_colour) {
         colour = colours[i];
       }
+      // Draw the triangle
       triangle_f(
         halfw + (int)(v1.x * scale), halfh + (int)(v1.y * scale), v1.z,
         halfw + (int)(v2.x * scale), halfh + (int)(v2.y * scale), v2.z,
         halfw + (int)(v3.x * scale), halfh + (int)(v3.y * scale), v3.z,
-        work_normals[i], colour.x, colour.y, colour.z
+        &work_normals[i], colour.x, colour.y, colour.z
       );
     } else {
+      // Draw the wireframe triangle
       triangle_w(
         halfw + (int)(v1.x * scale), halfh + (int)(v1.y * scale),
         halfw + (int)(v2.x * scale), halfh + (int)(v2.y * scale),
         halfw + (int)(v3.x * scale), halfh + (int)(v3.y * scale),
-        250, 125, 0
+        colour.x, colour.y, colour.z
       );
     }
   }
+  // Swap the image to the screen and process the next image
   gtk_image_set_from_pixbuf (image, pixbuf);
   return 1;
 }
@@ -468,6 +500,7 @@ void read(std::string filename) {
   unsigned int vs = 0;
   unsigned int fs = 0;
 
+  // While there's input from the file
   while(std::getline(file, buffer)) {
     std::stringstream ss(buffer);
     ss >> s;
@@ -482,12 +515,13 @@ void read(std::string filename) {
       ++fs;
     }
   }
+  // Initialize work verices
   for (unsigned int i = 0; i < vs; ++i) {
     work_vertices.push_back(glm::vec3(0.0));
   }
+  // calculate normals and initialize work vertices and random colours
   for (unsigned int i = 0; i < fs; ++i) {
     colours.push_back(glm::ivec3(std::rand()%255, std::rand()%255, std::rand()%255));
-
     nc1 = vertices[faces[i].z - 1] - vertices[faces[i].x - 1];
     nc2 = vertices[faces[i].y - 1] - vertices[faces[i].x - 1];
     normals.push_back(glm::cross(nc2, nc1));
@@ -526,6 +560,7 @@ void print_help() {
 
 int main(int argc, const char* argv[]) {
 
+  // Handle the CLI args
   bool file = false;
   std::string argument; 
   for (int i = 1; i < argc; ++i) {
@@ -571,7 +606,7 @@ int main(int argc, const char* argv[]) {
   }
   colour = choose_colour(col);
 
-  // Some initial transformations
+  // Some initial transformations (view and perspective matrices)
   glm::mat4 view = glm::mat4(1.0f);
   viewpos = glm::vec3(0.0f, 0.0f, -10.0f);
   viewpos_n = glm::normalize(viewpos);
