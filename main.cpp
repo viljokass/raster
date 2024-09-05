@@ -276,7 +276,7 @@ void triangle_f(
         std::swap(xa, xb);
         std::swap(za, zb);
       }
-      lerp_const = ((zb - za)/(float)(xb - xa));
+      z_lerp_const = ((zb - za)/(float)(xb - xa));
       for(int x = xa; x <= xb; ++x) {
         // Interpolate z
         z_com = za + (x - xa) * z_lerp_const;
@@ -300,7 +300,7 @@ void triangle_f(
         std::swap(xa, xb);
         std::swap(za, zb);
       }
-      lerp_const = ((zb - za)/(float)(xb - xa));
+      z_lerp_const = ((zb - za)/(float)(xb - xa));
       for (int x = xa; x <= xb; ++x) {
         z_com = za + (x - xa) * z_lerp_const;
         if (get_from_z_buffer(x, y) > z_com) {
