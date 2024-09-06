@@ -9,11 +9,18 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-const int width = 400;
-const int height = 300;
-const int halfw = 200;
-const int halfh = 150;
-const int scale = 40;
+struct Face_s {
+  int v1v; int v1n; int v1t;
+  int v2v; int v2n; int v2t;
+  int v3v; int v3n; int v3t;
+} Face_default = {0,0,0,0,0,0,0,0,0};
+typedef struct Face_s Face;
+
+const int width = 400 * 2;
+const int height = 300 * 2;
+const int halfw = 200 * 2;
+const int halfh = 150 * 2;
+const int scale = 40 * 2;
 const float max_float = std::numeric_limits<float>::max();
 
 GdkPixbuf *pixbuf = gdk_pixbuf_new (GDK_COLORSPACE_RGB, FALSE, 8, width, height);
@@ -28,8 +35,10 @@ std::vector<glm::vec3> work_vertices;
 std::vector<glm::vec3> normals;
 std::vector<glm::vec3> work_normals;
 
-std::vector<glm::ivec3> faces;
+std::vector<Face> faces;
 std::vector<glm::ivec3> colours;
+
+std::vector<glm::vec2> texcoords;
 
 float z_buffer[width*height];
 
@@ -43,7 +52,8 @@ enum Colour {
   ORANGE,
   YELLOW,
   GREEN,
-  WHITE
+  WHITE,
+  GRAY
 };
 
 // Parameters for rendering
@@ -51,12 +61,13 @@ bool bfc = true;
 bool fill = true;
 bool enable_z_buffer = true;
 bool random_colour = false;
+bool textures = false;
 Colour col = ORANGE;
 
 // A pixel drawing function.
 inline void draw_pixel (int x, int y, unsigned char red, unsigned char green, unsigned char blue) {
-  if (y < 1 || y > height - 1) return;
-  if (x < 1 || x > width - 1) return;
+  if (y < 0 || y > height - 1) return;
+  if (x < 0 || x > width - 1) return;
   *(pixels + (height - y) * rowstride + x * 3) = red;
   *(pixels + (height - y) * rowstride + x * 3 + 1) = green;
   *(pixels + (height - y) * rowstride + x * 3 + 2) = blue;
@@ -111,109 +122,11 @@ inline void triangle_w(int p1x, int p1y, int p2x, int p2y, int p3x, int p3y, cha
   line(p3x, p3y, p1x, p1y, r, g, b);
 }
 
-/*
-// I actually don't know what this does lol.
-inline int sign(int x1, int y1, int x2, int y2, int x3, int y3) {
-  return (x1 - x3) * (y2 - y3) - (x2 - x3) * (y1 - y3);
-}
-
-// Check if the point is within the triangle
-inline bool point_in_tri(int x1, int y1, int x2, int y2, int x3, int y3, int x, int y) {
-  int d1, d2, d3;
-  bool has_neg, has_pos;
-
-  d1 = sign(x, y, x1, y1, x2, y2);
-  d2 = sign(x, y, x2, y2, x3, y3);
-  d3 = sign(x, y, x3, y3, x1, y1);
-
-  has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
-  has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
-
-  return !(has_neg && has_pos);
-}
-
-// Draw a triangle
-// (z-buffer might be easier to implement on scanline.
-inline void triangle_f(
-  int p1x, int p1y, float p1z,
-  int p2x, int p2y, float p2z,
-  int p3x, int p3y, float p3z,
-  glm::vec3 normal, unsigned char r, unsigned char g, unsigned char b) {
-
-  float intensity = std::min(1.0f, std::max(0.0f, glm::dot(normal, -viewpos_n)));
-
-  r = (unsigned char)(intensity * r);
-  g = (unsigned char)(intensity * g);
-  b = (unsigned char)(intensity * b);
-
-  // Create the bounding box
-  int bbox_min_x = width;
-  int bbox_min_y = height;
-  int bbox_max_x = 0;
-  int bbox_max_y = 0;
-
-  if (p1x < bbox_min_x) bbox_min_x = p1x;
-  if (p1x > bbox_max_x) bbox_max_x = p1x;
-  if (p1y < bbox_min_y) bbox_min_y = p1y;
-  if (p1y > bbox_max_y) bbox_max_y = p1y;
-
-  if (p2x < bbox_min_x) bbox_min_x = p2x;
-  if (p2x > bbox_max_x) bbox_max_x = p2x;
-  if (p2y < bbox_min_y) bbox_min_y = p2y;
-  if (p2y > bbox_max_y) bbox_max_y = p2y;
-
-  if (p3x < bbox_min_x) bbox_min_x = p3x;
-  if (p3x > bbox_max_x) bbox_max_x = p3x;
-  if (p3y < bbox_min_y) bbox_min_y = p3y;
-  if (p3y > bbox_max_y) bbox_max_y = p3y;
-
-
-  // Draw bounding boxes, just for fun
-  line(bbox_min_x, bbox_min_y, bbox_max_x, bbox_min_y, 255, 255, 0);
-  line(bbox_max_x, bbox_min_y, bbox_max_x, bbox_max_y, 255, 255, 0);
-  line(bbox_max_x, bbox_max_y, bbox_min_x, bbox_max_y, 255, 255, 0);
-  line(bbox_min_x, bbox_max_y, bbox_min_x, bbox_min_y, 255, 255, 0);
-
-  // If z_buffer is enabled
-  if (enable_z_buffer) {
-    // No time for fancy-pants linear interpolation
-    // of z values - I'll just slap the minimum value of z
-    // from the group of 3 in the z-buffer and call it a day.
-    // Works as long as no triangles intersect. Or in another
-    // words, breaks apart immediately if that happens.
-    float z_min = std::min(std::min(p1z, p2z), p3z);
-    // Check, if the pixels within the bounding box are in
-    // the triangle. Probably has room for optimization.
-    for (int x = bbox_min_x; x < bbox_max_x; ++x) {
-      for (int y = bbox_min_y; y < bbox_max_y; ++y) {
-        if (point_in_tri(p1x, p1y, p2x, p2y, p3x, p3y, x, y)) {        
-          if (get_from_z_buffer(x, y) > z_min) {
-            draw_pixel(x, y, r, g, b);
-            put_in_z_buffer(x, y, z_min);
-          } 
-        }
-      }
-    }
-  }
-  // If z_buffer is disabled
-  else {
-    for (int x = bbox_min_x; x < bbox_max_x; ++x) {
-      for (int y = bbox_min_y; y < bbox_max_y; ++y) {
-        if (point_in_tri(p1x, p1y, p2x, p2y, p3x, p3y, x, y)) {
-          draw_pixel(x, y, r, g, b);
-        }
-      }
-    }
-  }
-}
-*/
-
-// Another way to draw tris. A 'line scanner',
-// Also is capable of proper z_buffering
+// This thing draws triangles
 void triangle_f(
-  int p1x, int p1y, float p1z,
-  int p2x, int p2y, float p2z,
-  int p3x, int p3y, float p3z,
+  int p1x, int p1y, float p1z, float u1, float v1,
+  int p2x, int p2y, float p2z, float u2, float v2,
+  int p3x, int p3y, float p3z, float u3, float v3,
   glm::vec3 *normal,
   unsigned char r,
   unsigned char g,
@@ -223,7 +136,7 @@ void triangle_f(
   if (p1y == p2y && p1y == p3y) return;
 
   // Lighting calcs
-  float intensity = std::min(1.0f, std::max(0.0f, glm::dot(*normal, -viewpos_n)));
+  float intensity = std::min(1.0f, std::max(0.05f, glm::dot(*normal, -viewpos_n)));
   r = (unsigned char)(intensity * r);
   g = (unsigned char)(intensity * g);
   b = (unsigned char)(intensity * b);
@@ -365,12 +278,19 @@ static gint64 delta_time = 0;
 // calculations and drawing
 glm::vec3 v;
 glm::vec4 wv;
-glm::ivec3 face;
+
+Face draw_face;
+
 glm::ivec3 colour;
+
 glm::vec3 v1;
 glm::vec3 v2;
 glm::vec3 v3;
 glm::vec3 n;
+glm::vec2 uv1;
+glm::vec2 uv2;
+glm::vec2 uv3;
+
 float wvw;
 
 // Render loop
@@ -444,11 +364,15 @@ gboolean render (GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
   // }
   int flen = faces.size();
   for (int i = 0; i < flen; ++i) {
-    face = faces[i];
-    v1 = work_vertices[face.x-1]; // vertex 1
-    v2 = work_vertices[face.y-1]; // vertex 2
-    v3 = work_vertices[face.z-1]; // vertex 3
-
+    draw_face = faces[i];
+    v1 = work_vertices[draw_face.v1v - 1]; // vertex 1
+    v2 = work_vertices[draw_face.v2v - 1]; // vertex 2
+    v3 = work_vertices[draw_face.v3v - 1]; // vertex 3
+    if (textures) {
+      uv1 = texcoords[draw_face.v1v - 1];
+      uv2 = texcoords[draw_face.v2v - 1];
+      uv3 = texcoords[draw_face.v3v - 1];
+    }
     // Calculate dot product of the view-space 
     // vertices and view direction
     float dot = 
@@ -464,9 +388,9 @@ gboolean render (GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
       }
       // Draw the triangle
       triangle_f(
-        halfw + (int)(v1.x * scale), halfh + (int)(v1.y * scale), v1.z,
-        halfw + (int)(v2.x * scale), halfh + (int)(v2.y * scale), v2.z,
-        halfw + (int)(v3.x * scale), halfh + (int)(v3.y * scale), v3.z,
+        halfw + (int)(v1.x * scale), halfh + (int)(v1.y * scale), v1.z, uv1.x, uv1.y,
+        halfw + (int)(v2.x * scale), halfh + (int)(v2.y * scale), v2.z, uv2.x, uv2.y,
+        halfw + (int)(v3.x * scale), halfh + (int)(v3.y * scale), v3.z, uv3.x, uv3.y,
         &work_normals[i], colour.x, colour.y, colour.z
       );
     } else {
@@ -484,47 +408,75 @@ gboolean render (GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
   return 1;
 }
 
-glm::vec3 nc1;
-glm::vec3 nc2;
+// Function for reading files
+void read_model(std::string filename) {
 
-// Function for reading .obj files
-void read(std::string filename) {
+  Face work_face;
+  glm::vec3 nc1;
+  glm::vec3 nc2;
 
   std::ifstream file(filename);
   std::string buffer;
 
   float f1, f2, f3;
-  int i1, i2, i3;
-  std::string s;
+  std::string s, s1, s2, s3;
 
   unsigned int vs = 0;
   unsigned int fs = 0;
+  unsigned int ns = 0;
+  unsigned int ts = 0;
 
   // While there's input from the file
   while(std::getline(file, buffer)) {
     std::stringstream ss(buffer);
     ss >> s;
     if (s == "v") {
+      // Parse vertices
       ss >> f1 >> f2 >> f3;
       vertices.push_back(glm::vec3(f1, f2, f3));
       ++vs;
     }
     else if (s == "f") {
-      ss >> i1 >> i2 >> i3;
-      faces.push_back(glm::ivec3(i1, i2, i3));
+      // Parse faces
+      ss >> s1 >> s2 >> s3;
+      work_face.v1v = stoi(s1);
+      work_face.v2v = stoi(s2);
+      work_face.v3v = stoi(s3);
+      faces.push_back(work_face);
       ++fs;
     }
+    else if (s == "vt") {
+      // Parse tex coords
+      ss >> f1 >> f2;
+      texcoords.push_back(glm::vec2(f1, f2));
+      ++ts;
+    }
   }
-  // Initialize work verices
+  if (ts > 0) textures = true;
+  // Initialize work verices and calculate range
+  float y_offset;
   for (unsigned int i = 0; i < vs; ++i) {
+    y_offset += vertices[i].y;
     work_vertices.push_back(glm::vec3(0.0));
+  }
+  y_offset /= vs;
+  for (unsigned int i = 0; i < vs; ++i) {
+    /*
+    v = vertices[i];
+    vertices[i] = glm::vec3(v.x, v.y-y_offset, v.z);
+    */
+    vertices[i].y = vertices[i].y - y_offset;
   }
   // calculate normals and initialize work vertices and random colours
   for (unsigned int i = 0; i < fs; ++i) {
     colours.push_back(glm::ivec3(std::rand()%255, std::rand()%255, std::rand()%255));
-    nc1 = vertices[faces[i].z - 1] - vertices[faces[i].x - 1];
-    nc2 = vertices[faces[i].y - 1] - vertices[faces[i].x - 1];
+    work_face = faces[i];
+    nc1 = vertices[work_face.v3v - 1] - vertices[work_face.v1v - 1];
+    nc2 = vertices[work_face.v2v - 1] - vertices[work_face.v1v - 1];
     normals.push_back(glm::cross(nc2, nc1));
+  }
+  // allocate space for work normals
+  for (unsigned int i = 0; i < fs; ++i) {
     work_normals.push_back(glm::vec3(0.0));
   }
 }
@@ -543,6 +495,8 @@ glm::ivec3 choose_colour(Colour colour) {
       return glm::ivec3(0, 250, 0);
     case WHITE:
       return glm::ivec3(250);
+    case GRAY:
+      return glm::ivec3(160);
   }
   return glm::ivec3(250, 125, 0);
 }
@@ -555,12 +509,12 @@ void print_help() {
   std::cout << " * '-zbuff'                   > Disables the not-so-good z-buffer." << std::endl;
   std::cout << " * '-f [path/to/file.obj]'    > Loads the specified .obj file." << std::endl;
   std::cout << " * '-c [colour]'              > specifies the object colour." << std::endl;
-  std::cout << " * Colours: 'red', 'green', 'blue', 'orange', 'yellow', 'white', 'random'." << std::endl << std::endl;
+  std::cout << " * Colours: 'red', 'green', 'blue', 'orange', 'yellow', 'white', 'random', 'gray'." << std::endl << std::endl;
 }
 
 int main(int argc, const char* argv[]) {
 
-  // Handle the CLI args
+  // Handle the CLI args 
   bool file = false;
   std::string argument; 
   for (int i = 1; i < argc; ++i) {
@@ -575,7 +529,7 @@ int main(int argc, const char* argv[]) {
         ++i;
         continue;
       }
-      read(std::string(argv[i + 1]));
+      read_model(std::string(argv[i + 1]));
       file = true;
       ++i;
     }
@@ -588,6 +542,7 @@ int main(int argc, const char* argv[]) {
       else if (col_arg == "yellow") col = YELLOW;
       else if (col_arg == "green")  col = GREEN;
       else if (col_arg == "white")  col = WHITE;
+      else if (col_arg == "gray")   col = GRAY;
       else if (col_arg == "random") random_colour = true;
       else {
         std::cout << "Unknown colour. Defaulting to orange." << std::endl;
@@ -605,8 +560,8 @@ int main(int argc, const char* argv[]) {
     exit(0);
   }
   colour = choose_colour(col);
-
   // Some initial transformations (view and perspective matrices)
+
   glm::mat4 view = glm::mat4(1.0f);
   viewpos = glm::vec3(0.0f, 0.0f, -10.0f);
   viewpos_n = glm::normalize(viewpos);
@@ -620,7 +575,7 @@ int main(int argc, const char* argv[]) {
   image = GTK_IMAGE (gtk_image_new());
   window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
   gtk_window_set_resizable(GTK_WINDOW(window), false);
-  gtk_window_set_title(GTK_WINDOW(window), "Raster");
+  gtk_window_set_title(GTK_WINDOW(window), "Hahmontaja Manninen");
   box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 5);
   gtk_box_pack_start (GTK_BOX (box), GTK_WIDGET(image), TRUE, TRUE, 0);
   gtk_container_add (GTK_CONTAINER (window), box);
