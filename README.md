@@ -1,4 +1,5 @@
-# raster
+# Hahmontaja Manninen
+### (RenderMan -> RenderManninen -> Hahmontaja Manninen)
 A little rasterizer program using knowledge from ssloy's tinyrenderer series and other sources.
 
 Uses GTK3 and glm.
