@@ -9,12 +9,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-struct Face_s {
-  int v1v; int v1n; int v1t;
-  int v2v; int v2n; int v2t;
-  int v3v; int v3n; int v3t;
-} Face_default = {0,0,0,0,0,0,0,0,0};
-typedef struct Face_s Face;
+#include "model.h"
 
 const int width = 400 * 2;
 const int height = 300 * 2;
@@ -29,16 +24,7 @@ guchar *pixels = gdk_pixbuf_get_pixels (pixbuf);
 GtkImage *image;
 unsigned int pixel_amount = width * height;
 
-std::vector<glm::vec3> vertices;
-std::vector<glm::vec3> work_vertices;
-
-std::vector<glm::vec3> normals;
-std::vector<glm::vec3> work_normals;
-
-std::vector<Face> faces;
-std::vector<glm::ivec3> colours;
-
-std::vector<glm::vec2> texcoords;
+std::vector<Model*> models;
 
 float z_buffer[width*height];
 
@@ -116,6 +102,7 @@ void line(int x0, int y0, int x1, int y1, char r, char g, char b) {
   }
 }
 
+// Draw a wireframe triangle
 inline void triangle_w(int p1x, int p1y, int p2x, int p2y, int p3x, int p3y, char r, char g, char b) {
   line(p1x, p1y, p2x, p2y, r, g, b);
   line(p2x, p2y, p3x, p3y, r, g, b);
@@ -282,6 +269,7 @@ glm::vec4 wv;
 Face draw_face;
 
 glm::ivec3 colour;
+glm::ivec3 tmp_colour;
 
 glm::vec3 v1;
 glm::vec3 v2;
@@ -302,183 +290,119 @@ gboolean render (GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
   old_time = time;
   float delta_b = delta_time/1000000.0;
 //  std::cout << (int)(1.0/delta_b) << std::endl;
-
   // Clear the screen and z-buffer
   clear_screen();
   clear_z_buff();
 
   // Calculate rotation matrix for the model
-  glm::mat4 model = glm::mat4(1.0f);
-  model = glm::rotate(model, time/1000000.0f, glm::vec3(0, 1, 0));
+  glm::mat4 model_mat = glm::mat4(1.0f);
+  model_mat = glm::rotate(model_mat, time/1000000.0f, glm::vec3(0, 1, 0));
 
-  // Transform the vertices here using model and
-  // perspective matrices and untransformed vertices
-  // Process:
-  // 1. put x, y, z values from vertex to work vertex
-  // 2. transform work vertex with the matrices
-  // 3. perform perspective division
-  // 4. put the result to the work vertex array for later
-  int vlen = vertices.size();
-  for(int i = 0; i < vlen; ++i) {
-    v = vertices[i];
-    wv.x = v.x;                   // 1.
-    wv.y = v.y;
-    wv.z = v.z;
-    wv.w = 1.0;
-    wv = persview * model * wv;   // 2.
-    wvw = wv.w;
-    wv.x = wv.x/wvw;              // 3.
-    wv.y = wv.y/wvw;
-    wv.z = wv.z/wvw;
-    work_vertices[i].x = wv.x;    // 4.
-    work_vertices[i].y = wv.y;
-    work_vertices[i].z = wv.z;
-  }
-  
-  // Transform the normals with model matrix
-  int nlen = normals.size();
-  for (int i = 0; i < nlen; ++i) {
-    work_normals[i] = glm::normalize(glm::mat3(model) * normals[i]);
-  }
-
-  // Draw model using faces and transformed vertices
-  // Do I need to take the unneccessary-per-cycle checks
-  // out or does the compiler already do that when optimizing?
-  // As in:
-  // for (x = 0, x < 1000) {
-  //   if (a) {
-  //     [no changes to a]
-  //   } else {
-  //     [no changes to a]
-  //   }
-  // }
-  // Optimized for performance, the above should sensibly become
-  // if (a) {
-  //   for (x = 0, x < 1000) {
-  //     [no changes to a]
-  //   }
-  // } else {
-  //   for (x = 0, x < 1000) {
-  //     [no changes to a]
-  //   }
-  // }
-  int flen = faces.size();
-  for (int i = 0; i < flen; ++i) {
-    draw_face = faces[i];
-    v1 = work_vertices[draw_face.v1v - 1]; // vertex 1
-    v2 = work_vertices[draw_face.v2v - 1]; // vertex 2
-    v3 = work_vertices[draw_face.v3v - 1]; // vertex 3
-    if (textures) {
-      uv1 = texcoords[draw_face.v1v - 1];
-      uv2 = texcoords[draw_face.v2v - 1];
-      uv3 = texcoords[draw_face.v3v - 1];
+  unsigned int mlen = models.size();
+  for (unsigned int i = 0; i < mlen; ++i) {
+    Model *model = models[i];
+    if (model->iscolour) {
+      tmp_colour = model->colour;
     }
-    // Calculate dot product of the view-space 
-    // vertices and view direction
-    float dot = 
-      glm::dot(
-        glm::normalize(glm::cross(v3-v1, v2-v1)), 
-        viewpos_n
-      );
-    // Back face culling (if above dot product is negative)
-    if (bfc && dot < 0) continue;
-    if (fill) {
-      if (random_colour) {
-        colour = colours[i];
+    else {
+      tmp_colour = colour;
+    }
+    // Transform the vertices here using model and
+    // perspective matrices and untransformed vertices
+    // Process:
+    // 1. put x, y, z values from vertex to work vertex
+    // 2. transform work vertex with the matrices
+    // 3. perform perspective division
+    // 4. put the result to the work vertex array for later
+    int vlen = model->vertices.size();
+    for(int i = 0; i < vlen; ++i) {
+      v = model->vertices[i];
+      wv.x = v.x;                   // 1.
+      wv.y = v.y;
+      wv.z = v.z;
+      wv.w = 1.0;
+      wv = persview * model_mat * wv;   // 2.
+      wvw = wv.w;
+      wv.x = wv.x/wvw;              // 3.
+      wv.y = wv.y/wvw;
+      wv.z = wv.z/wvw;
+      model->work_vertices[i].x = wv.x;    // 4.
+      model->work_vertices[i].y = wv.y;
+      model->work_vertices[i].z = wv.z;
+    }
+    
+    // Transform the normals with model matrix
+    int nlen = model->normals.size();
+    for (int i = 0; i < nlen; ++i) {
+      model->work_normals[i] = glm::normalize(glm::mat3(model_mat) * model->normals[i]);
+    }
+
+    // Draw model using faces and transformed vertices
+    // Do I need to take the unneccessary-per-cycle checks
+    // out or does the compiler already do that when optimizing?
+    // As in:
+    // for (x = 0, x < 1000) {
+    //   if (a) {
+    //     [no changes to a]
+    //   } else {
+    //     [no changes to a]
+    //   }
+    // }
+    // Optimized for performance, the above should sensibly become
+    // if (a) {
+    //   for (x = 0, x < 1000) {
+    //     [no changes to a]
+    //   }
+    // } else {
+    //   for (x = 0, x < 1000) {
+    //     [no changes to a]
+    //   }
+    // }
+    int flen = model->faces.size();
+    for (int i = 0; i < flen; ++i) {
+      draw_face = model->faces[i];
+      v1 = model->work_vertices[draw_face.v1v - 1]; // vertex 1
+      v2 = model->work_vertices[draw_face.v2v - 1]; // vertex 2
+      v3 = model->work_vertices[draw_face.v3v - 1]; // vertex 3
+      if (model->textures) {
+        uv1 = model->texcoords[draw_face.v1v - 1];
+        uv2 = model->texcoords[draw_face.v2v - 1];
+        uv3 = model->texcoords[draw_face.v3v - 1];
       }
-      // Draw the triangle
-      triangle_f(
-        halfw + (int)(v1.x * scale), halfh + (int)(v1.y * scale), v1.z, uv1.x, uv1.y,
-        halfw + (int)(v2.x * scale), halfh + (int)(v2.y * scale), v2.z, uv2.x, uv2.y,
-        halfw + (int)(v3.x * scale), halfh + (int)(v3.y * scale), v3.z, uv3.x, uv3.y,
-        &work_normals[i], colour.x, colour.y, colour.z
-      );
-    } else {
-      // Draw the wireframe triangle
-      triangle_w(
-        halfw + (int)(v1.x * scale), halfh + (int)(v1.y * scale),
-        halfw + (int)(v2.x * scale), halfh + (int)(v2.y * scale),
-        halfw + (int)(v3.x * scale), halfh + (int)(v3.y * scale),
-        colour.x, colour.y, colour.z
-      );
+      // Calculate dot product of the view-space 
+      // vertices and view direction
+      float dot = 
+        glm::dot(
+          glm::normalize(glm::cross(v3-v1, v2-v1)), 
+          viewpos_n
+        );
+      // Back face culling (if above dot product is negative)
+      if (bfc && dot < 0) continue;
+      if (fill) {
+        if (random_colour) {
+          colour = model->colours[i];
+        }
+        // Draw the triangle
+        triangle_f(
+          halfw + (int)(v1.x * scale), halfh + (int)(v1.y * scale), v1.z, uv1.x, uv1.y,
+          halfw + (int)(v2.x * scale), halfh + (int)(v2.y * scale), v2.z, uv2.x, uv2.y,
+          halfw + (int)(v3.x * scale), halfh + (int)(v3.y * scale), v3.z, uv3.x, uv3.y,
+          &model->work_normals[i], tmp_colour.x, tmp_colour.y, tmp_colour.z
+        );
+      } else {
+        // Draw the wireframe triangle
+        triangle_w(
+          halfw + (int)(v1.x * scale), halfh + (int)(v1.y * scale),
+          halfw + (int)(v2.x * scale), halfh + (int)(v2.y * scale),
+          halfw + (int)(v3.x * scale), halfh + (int)(v3.y * scale),
+          tmp_colour.x, tmp_colour.y, tmp_colour.z
+        );
+      }
     }
   }
   // Swap the image to the screen and process the next image
   gtk_image_set_from_pixbuf (image, pixbuf);
   return 1;
-}
-
-// Function for reading files
-void read_model(std::string filename) {
-
-  Face work_face;
-  glm::vec3 nc1;
-  glm::vec3 nc2;
-
-  std::ifstream file(filename);
-  std::string buffer;
-
-  float f1, f2, f3;
-  std::string s, s1, s2, s3;
-
-  unsigned int vs = 0;
-  unsigned int fs = 0;
-  unsigned int ns = 0;
-  unsigned int ts = 0;
-
-  // While there's input from the file
-  while(std::getline(file, buffer)) {
-    std::stringstream ss(buffer);
-    ss >> s;
-    if (s == "v") {
-      // Parse vertices
-      ss >> f1 >> f2 >> f3;
-      vertices.push_back(glm::vec3(f1, f2, f3));
-      ++vs;
-    }
-    else if (s == "f") {
-      // Parse faces
-      ss >> s1 >> s2 >> s3;
-      work_face.v1v = stoi(s1);
-      work_face.v2v = stoi(s2);
-      work_face.v3v = stoi(s3);
-      faces.push_back(work_face);
-      ++fs;
-    }
-    else if (s == "vt") {
-      // Parse tex coords
-      ss >> f1 >> f2;
-      texcoords.push_back(glm::vec2(f1, f2));
-      ++ts;
-    }
-  }
-  if (ts > 0) textures = true;
-  // Initialize work verices and calculate range
-  float y_offset;
-  for (unsigned int i = 0; i < vs; ++i) {
-    y_offset += vertices[i].y;
-    work_vertices.push_back(glm::vec3(0.0));
-  }
-  y_offset /= vs;
-  for (unsigned int i = 0; i < vs; ++i) {
-    /*
-    v = vertices[i];
-    vertices[i] = glm::vec3(v.x, v.y-y_offset, v.z);
-    */
-    vertices[i].y = vertices[i].y - y_offset;
-  }
-  // calculate normals and initialize work vertices and random colours
-  for (unsigned int i = 0; i < fs; ++i) {
-    colours.push_back(glm::ivec3(std::rand()%255, std::rand()%255, std::rand()%255));
-    work_face = faces[i];
-    nc1 = vertices[work_face.v3v - 1] - vertices[work_face.v1v - 1];
-    nc2 = vertices[work_face.v2v - 1] - vertices[work_face.v1v - 1];
-    normals.push_back(glm::cross(nc2, nc1));
-  }
-  // allocate space for work normals
-  for (unsigned int i = 0; i < fs; ++i) {
-    work_normals.push_back(glm::vec3(0.0));
-  }
 }
 
 glm::ivec3 choose_colour(Colour colour) {
@@ -524,12 +448,14 @@ int main(int argc, const char* argv[]) {
     else if (argument == "-wire") fill = false;
     else if (argument == "-zbuff") enable_z_buffer = false;
     else if (argument == "-f") {
+      /*
       if (file) {
         std::cout << "File already specified and probably read too." << std::endl;
         ++i;
         continue;
       }
-      read_model(std::string(argv[i + 1]));
+      */
+      models.push_back(new Model(std::string(argv[i + 1])));
       file = true;
       ++i;
     }

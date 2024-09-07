@@ -1,6 +1,8 @@
 ## This file states the sources of the models in this folder.
 Files might contain slight modifications.
 IDK if this needs to be here but here we go anyways.
+I renamed the files from obj to vfe so that if someone stumbles upon this
+they dont think these are standard objs.
 
 gourd.obj and dodecahedron.obj are from
 https://github.com/angerangel/LCR3D/blob/master/3D-models/
