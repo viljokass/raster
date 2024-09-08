@@ -42,6 +42,10 @@ public:
     std::ifstream file(filename);
     std::string buffer;
 
+    float x_off = 0.0;
+    float y_off = 0.0; 
+    float z_off = 0.0;
+
     float f1, f2, f3;
     std::string s, s1, s2, s3;
 
@@ -80,10 +84,15 @@ public:
         colour.z = stoi(s3);
         iscolour = true;
       }
+      else if (s == "p") {
+        ss >> x_off >> y_off >> z_off;
+      }
     }
     if (ts > 0) textures = true;
 
     for (unsigned int i = 0; i < vs; ++i) {
+      nc1 = vertices[i];
+      vertices[i] = glm::vec3(nc1.x + x_off, nc1.y + y_off, nc1.z + z_off);
       work_vertices.push_back(glm::vec3(0.0));
     }
 

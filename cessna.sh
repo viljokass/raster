@@ -1,3 +1,3 @@
 #!/bin/bash
 
-./manninen -f vfe/chass.vfe -f vfe/wheels.vfe -f vfe/window.vfe
+./manninen -f vfe/cessna/chass.vfe -f vfe/cessna/wheels.vfe -f vfe/cessna/window.vfe

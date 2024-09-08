@@ -492,7 +492,7 @@ int main(int argc, const char* argv[]) {
   viewpos = glm::vec3(0.0f, 0.0f, -10.0f);
   viewpos_n = glm::normalize(viewpos);
   view = glm::translate(view, viewpos);
-  glm::mat4 perspective = glm::perspective(glm::radians(10.0f), 1.0f, 0.1f, 100.0f);
+  glm::mat4 perspective = glm::perspective(glm::radians(15.0f), 1.0f, 0.1f, 100.0f);
   persview = perspective * view;
 
   // Prepare the GTK-window and all
