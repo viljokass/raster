@@ -52,22 +52,22 @@ Colour col = ORANGE;
 
 // A pixel drawing function.
 inline void draw_pixel (int x, int y, unsigned char red, unsigned char green, unsigned char blue) {
-  if (y < 0 || y > height - 1) return;
-  if (x < 0 || x > width - 1) return;
+  if (y < 1 || y > height - 1) return;
+  if (x < 1 || x > width - 1) return;
   *(pixels + (height - y) * rowstride + x * 3) = red;
   *(pixels + (height - y) * rowstride + x * 3 + 1) = green;
   *(pixels + (height - y) * rowstride + x * 3 + 2) = blue;
 }
 
 inline void put_in_z_buffer(int x, int y, float value) {
-  if (y < 0 || y > height - 1) return;
-  if (x < 0 || x > width - 1) return;
+  if (y < 1 || y > height - 1) return;
+  if (x < 1 || x > width - 1) return;
   z_buffer[(height - y) * width + x] = value;
 }
 
 inline float get_from_z_buffer(int x, int y) {
-  if (y < 0 || y > height - 1) return max_float;
-  if (x < 0 || x > width - 1) return max_float;
+  if (y < 1 || y > height - 1) return max_float;
+  if (x < 1 || x > width - 1) return max_float;
   return z_buffer[(height - y) * width + x];
 }
 
@@ -295,7 +295,12 @@ gboolean render (GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
   clear_z_buff();
 
   // Calculate rotation matrix for the model
-  glm::mat4 model_mat = glm::mat4(1.0f);
+  glm::mat4 model_mat = glm::mat4(
+    1.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 1.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 1.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 1.0f
+  );
   model_mat = glm::rotate(model_mat, time/1000000.0f, glm::vec3(0, 1, 0));
 
   unsigned int mlen = models.size();
