@@ -241,7 +241,7 @@ void triangle_f(
   }
 }
 
-unsigned int clear_amnt = (int)(width*height/5);
+unsigned int clear_amnt = (int)(width*height/10);
 inline void clear_screen_dirt() {
     for (unsigned int i = 0; i < clear_amnt; ++i) {
     draw_pixel(std::rand()%width, std::rand()%height, 20, 20, 20);
