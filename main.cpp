@@ -52,22 +52,22 @@ Colour col = ORANGE;
 
 // A pixel drawing function.
 inline void draw_pixel (int x, int y, unsigned char red, unsigned char green, unsigned char blue) {
-  if (y < 1 || y > height - 1) return;
-  if (x < 1 || x > width - 1) return;
+  if (y < 0 || y > height - 1) return;
+  if (x < 0 || x > width - 1) return;
   *(pixels + (height - y) * rowstride + x * 3) = red;
   *(pixels + (height - y) * rowstride + x * 3 + 1) = green;
   *(pixels + (height - y) * rowstride + x * 3 + 2) = blue;
 }
 
 inline void put_in_z_buffer(int x, int y, float value) {
-  if (y < 1 || y > height - 1) return;
-  if (x < 1 || x > width - 1) return;
+  if (y < 0 || y > height - 1) return;
+  if (x < 0 || x > width - 1) return;
   z_buffer[(height - y) * width + x] = value;
 }
 
 inline float get_from_z_buffer(int x, int y) {
-  if (y < 1 || y > height - 1) return max_float;
-  if (x < 1 || x > width - 1) return max_float;
+  if (y < 0 || y > height - 1) return max_float;
+  if (x < 0 || x > width - 1) return max_float;
   return z_buffer[(height - y) * width + x];
 }
 
@@ -241,6 +241,13 @@ void triangle_f(
   }
 }
 
+unsigned int clear_amnt = (int)(width*height/5);
+inline void clear_screen_dirt() {
+    for (unsigned int i = 0; i < clear_amnt; ++i) {
+    draw_pixel(std::rand()%width, std::rand()%height, 20, 20, 20);
+  }
+}
+
 // Clear the screen (rewrite all to certain col)
 inline void clear_screen() {
   for (unsigned int x = 0; x < pixel_amount; ++x) {
@@ -249,6 +256,8 @@ inline void clear_screen() {
     *(pixels + x*3+2) 	= 20;
   }
 }
+
+void (*clear_func)(void) = &clear_screen;
 
 // Set all elements of z-buffer to max_float
 inline void clear_z_buff() {
@@ -291,16 +300,11 @@ gboolean render (GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
   float delta_b = delta_time/1000000.0;
 //  std::cout << (int)(1.0/delta_b) << std::endl;
   // Clear the screen and z-buffer
-  clear_screen();
+  (*clear_func)();
   clear_z_buff();
 
   // Calculate rotation matrix for the model
-  glm::mat4 model_mat = glm::mat4(
-    1.0f, 0.0f, 0.0f, 0.0f,
-    0.0f, 1.0f, 0.0f, 0.0f,
-    0.0f, 0.0f, 1.0f, 0.0f,
-    0.0f, 0.0f, 0.0f, 1.0f
-  );
+  glm::mat4 model_mat = glm::mat4(1.0f);
   model_mat = glm::rotate(model_mat, time/1000000.0f, glm::vec3(0, 1, 0));
 
   unsigned int mlen = models.size();
@@ -435,9 +439,10 @@ void print_help() {
   std::cout << " * '-help'                    > Displays this message. " << std::endl;
   std::cout << " * '-bfc'                     > Disables back face culling. " << std::endl;
   std::cout << " * '-wire'                    > Draws wireframe triangles (not filled)." << std::endl;
-  std::cout << " * '-zbuff'                   > Disables the not-so-good z-buffer." << std::endl;
-  std::cout << " * '-f [path/to/file.obj]'    > Loads the specified .obj file." << std::endl;
-  std::cout << " * '-c [colour]'              > specifies the object colour." << std::endl;
+  std::cout << " * '-dirt'                    > Clears the screen lazily, making this cool effect. Check it out." << std::endl;
+  std::cout << " * '-zbuff'                   > Disables the z-buffer." << std::endl;
+  std::cout << " * '-f [path/to/file.vfe]'    > Loads the specified .vfe (non-standard .obj) file." << std::endl;
+  std::cout << " * '-c [colour]'              > specifies the object colour, unless specified in the .vfe file." << std::endl;
   std::cout << " * Colours: 'red', 'green', 'blue', 'orange', 'yellow', 'white', 'random', 'gray'." << std::endl << std::endl;
 }
 
@@ -452,6 +457,7 @@ int main(int argc, const char* argv[]) {
     else if (argument == "-bfc") bfc = false;
     else if (argument == "-wire") fill = false;
     else if (argument == "-zbuff") enable_z_buffer = false;
+    else if (argument == "-dirt") clear_func = &clear_screen_dirt;
     else if (argument == "-f") {
       /*
       if (file) {
