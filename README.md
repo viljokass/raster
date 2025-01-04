@@ -25,4 +25,4 @@ A silly wordplay on Pixar's RenderMan software.
 RenderMan -> RenderManninen -> Hahmontaja Manninen
 
 ## Models
-Provided are a few models, some made by me, some aquired from internet with credits. Some modifications have been made to accomodate the not-so-good parser, and the file extensions are renamed so as to not make anyone accidentally think they are .obj files, if the stumble across this repository.
+Provided are a few models, some made by me, some aquired from internet with credits. Some modifications have been made to accomodate the not-so-good parser, and the file extensions are renamed so as to not make anyone accidentally think they are .obj files, if they happen to stumble across this repository.
