@@ -3,6 +3,7 @@ A little program that loads modified .obj files and software renders them (not u
 
 ## Requirements
 GTK3 and GLM, compiler g++
+
 After installing these, compile using the provided compile script.
 
 ## Usage
@@ -20,6 +21,7 @@ Things that would be neat:
 
 ## Name?
 A silly wordplay on Pixar's RenderMan software.
+
 RenderMan -> RenderManninen -> Hahmontaja Manninen
 
 ## Models
