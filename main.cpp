@@ -10,7 +10,6 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "model.h"
-
 const int width = 400 * 2;
 const int height = 300 * 2;
 const int halfw = 200 * 2;
@@ -299,21 +298,21 @@ gboolean render (GtkWidget *widget, GdkFrameClock *clock, gpointer data) {
   delta_time = time - old_time;
   old_time = time;
   float delta_b = delta_time/1000000.0;
-//  std::cout << (int)(1.0/delta_b) << std::endl;
+  //  std::cout << (int)(1.0/delta_b) << std::endl;
   // Clear the screen and z-buffer
   (*clear_func)();
   clear_z_buff();
-  
-  /*
-  // Magic yes :)
-  float theTime = time/10000000.0f;
-  h.y = abs(sin(theTime*7)) * 3.0 - 1.5;
+
+/*
+  // Bounding around
+  float theTime = time/20000000.0f;
+  h.y = abs(sin(theTime*17)) * 3.0 - 1.5;
   h.x = (4.0f * abs(theTime*3 - floor(theTime*3 + 0.75f) + 0.25f) - 1.0f) * 4.0f;  
-  */
+*/
 
   // Calculate rotation matrix for the model
   glm::mat4 model_mat = glm::mat4(1.0f);
-  model_mat = glm::translate(model_mat, h);
+  // model_mat = glm::translate(model_mat, h);
   model_mat = glm::rotate(model_mat, time/1000000.0f, glm::vec3(0, 1, 0));
 
   unsigned int mlen = models.size();
